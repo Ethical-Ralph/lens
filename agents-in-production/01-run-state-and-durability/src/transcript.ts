@@ -71,7 +71,7 @@ function findBadResults(transcript: Message[]): Problem[] {
 export function repairTranscript(transcript: Message[], isReadOnly: (tool: string) => boolean): Repair {
   const problems = findProblems(transcript);
 
-  if (problems.some((p) => p.kind === ProblemKind.ResultWithoutCall)) {
+  if (problems.some((problem) => problem.kind === ProblemKind.ResultWithoutCall)) {
     return { ok: false, problems }; // someone must look at it
   }
 
