@@ -1,0 +1,14 @@
+{
+  "name": "@lens/testbed",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "payments": "node src/payments/server.ts"
+  },
+  "dependencies": {
+    "pg": "^8"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "agents-in-production",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "testbed",
+    "01-run-state-and-durability"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "db:up": "docker compose -f testbed/docker-compose.yml up -d --wait",
+    "db:down": "docker compose -f testbed/docker-compose.yml down -v",
+    "typecheck": "tsc --noEmit",
+    "test": "npm test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

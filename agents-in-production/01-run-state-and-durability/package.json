@@ -1,0 +1,12 @@
+{
+  "name": "@lens/01-run-state-and-durability",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "worker": "node src/worker.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lens/testbed": "*"
+  }
+}
