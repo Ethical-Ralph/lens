@@ -84,22 +84,13 @@ test('a run that fails after its refund holds the conversation until a person re
   expect((await worker(failed, { SCRIPT: ScriptName.BreaksAfterRefund })).stdout).toBe(WorkerResult.Failed);
 
   const next = await admit({ conversationId });
-  expect((await worker(next)).stdout).toBe(WorkerResult.LeaseUnavailable); // held: it waits, and isn't failed
+  expect((await worker(next)).stdout).toBe(WorkerResult.Held); // it waits, and isn't failed
+  expect((await worker(null)).stdout).toBe(WorkerResult.LeaseUnavailable); // a worker looking for work skips it
   expect((await runRow(next)).state).toBe(RunState.Accepted);
   expect(await charges()).toEqual([{ order_id: ORDER_ID, amount_minor: FIRST_AMOUNT }]);
 
   await store.resolve(failed); // a person checked the refund and updated the conversation
   expect((await worker(next, { SCRIPT: ScriptName.Reply })).stdout).toBe(WorkerResult.Done);
-});
-
-test('a run waits while an earlier run on its conversation is still in flight', async () => {
-  const conversationId = 'conversation_busy';
-  const first = await admit({ conversationId });
-  await admit({ conversationId });
-
-  const taken = await store.claim('worker-a', 30_000);
-  expect(taken!.runId).toBe(first);
-  expect(await store.claim('worker-b', 30_000)).toBeNull();
 });
 
 test('the same run ID with a different request is rejected', async () => {

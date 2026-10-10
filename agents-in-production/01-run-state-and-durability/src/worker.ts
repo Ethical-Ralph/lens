@@ -14,7 +14,7 @@ import { chooseVersion, Resolution } from './versions.ts';
 // One worker run: claim the lease, settle the version, repair the history, run the agent on
 // durable steps, finish. If the worker dies, its lease lapses and another worker resumes.
 
-export const WorkerResult = { Done: 'done', Failed: 'failed', LeaseUnavailable: 'lease-unavailable', LeaseLost: 'lease-lost' } as const;
+export const WorkerResult = { Done: 'done', Failed: 'failed', LeaseUnavailable: 'lease-unavailable', LeaseLost: 'lease-lost', Held: 'held' } as const;
 export type WorkerResult = (typeof WorkerResult)[keyof typeof WorkerResult];
 
 export type WorkerConfig = {
@@ -33,7 +33,9 @@ const HEARTBEATS_PER_LEASE = 3;
 // has started, or a run whose worker died.
 export async function work(db: Db, runId: string | null, config: WorkerConfig): Promise<WorkerResult> {
   const store = runStore(db);
-  const lease = await store.claim(`${hostname()}:${process.pid}`, config.leaseMs, runId);
+  const owner = `${hostname()}:${process.pid}`;
+  if (runId && (await store.isHeld(runId))) return WorkerResult.Held;
+  const lease = runId ? await store.claim(runId, owner, config.leaseMs) : await store.claimNext(owner, config.leaseMs);
   if (!lease) return WorkerResult.LeaseUnavailable;
   crashPoint(Phase.AfterClaim);
 

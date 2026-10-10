@@ -34,7 +34,7 @@ test('without recorded responses, the resumed run asks again and refunds a diffe
 
 test('a resumed run that asks for a different step than the one recorded is stopped', async () => {
   const runId = await admit();
-  const lease = await store.claim('worker-a', LEASE_MS, runId);
+  const lease = await store.claim(runId, 'worker-a', LEASE_MS);
   await store.recordIntent(lease!, 1, toolStep(ToolName.Refund), `${runId}:1`);
 
   const steps = durableSteps(store, lease!);
@@ -43,7 +43,7 @@ test('a resumed run that asks for a different step than the one recorded is stop
 
 test('an intent whose receiver does not deduplicate is never sent again', async () => {
   const runId = await admit();
-  const lease = await store.claim('worker-a', LEASE_MS, runId);
+  const lease = await store.claim(runId, 'worker-a', LEASE_MS);
   const SEND_EMAIL = toolStep('send_email');
   await store.recordIntent(lease!, 1, SEND_EMAIL, `${runId}:1`);
 
@@ -55,7 +55,7 @@ test('an intent whose receiver does not deduplicate is never sent again', async 
 
 test('a recorded output reads back exactly as it was written, key order included', async () => {
   const runId = await admit();
-  const lease = await store.claim('worker-a', LEASE_MS, runId);
+  const lease = await store.claim(runId, 'worker-a', LEASE_MS);
   const output = { refundId: 1, orderId: ORDER_ID, amountMinor: FIRST_AMOUNT, replayed: false };
   await store.recordResult(lease!, 1, toolStep(ToolName.Refund), output);
 

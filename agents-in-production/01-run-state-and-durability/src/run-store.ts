@@ -23,7 +23,7 @@ export class LeaseLost extends Error {
 }
 
 const CLAIMABLE = [RunState.Accepted, RunState.Running];
-const FINISHED = [RunState.Done, RunState.Resolved];
+const CANDIDATES_PER_CLAIM = 10;
 
 export function runStore(db: Db) {
   // Runs a write only while the lease token is current. Locking the run row stops a new
@@ -52,30 +52,59 @@ export function runStore(db: Db) {
       }
     },
 
-    // Takes a run that needs a worker: never started, or its lease has lapsed. With a run ID
-    // it takes that run; without one it takes the oldest, skipping rows another worker is
-    // claiming right now. A run waits while any earlier run on its conversation is unfinished:
-    // still in flight, or failed and not yet resolved by a person. The token goes up by one,
-    // so the previous owner's writes now fail.
-    async claim(owner: string, leaseMs: number, runId: string | null = null): Promise<Lease | null> {
+    // Takes the run only if nobody holds a live lease on it, and bumps the fencing token, so
+    // the previous owner's writes now fail. Two workers can try at once; one update wins.
+    async claim(runId: string, owner: string, leaseMs: number): Promise<Lease | null> {
       const { rows } = await db.query(
         `update runs
-            set owner = $1, lease_token = lease_token + 1, state = $3,
-                lease_expires_at = now() + make_interval(secs => $2 / 1000.0)
-          where id = (select id from runs candidate
-                       where state = any($4) and (lease_expires_at is null or lease_expires_at < now())
-                         and ($5::text is null or id = $5)
-                         and not exists (select 1 from runs earlier
-                                          where earlier.conversation_id = candidate.conversation_id
-                                            and earlier.created_at < candidate.created_at
-                                            and not earlier.state = any($6))
-                       order by created_at
-                       for update skip locked
-                       limit 1)
-          returning id, lease_token`,
-        [owner, leaseMs, RunState.Running, CLAIMABLE, runId, FINISHED],
+            set owner = $2, lease_token = lease_token + 1, state = $4,
+                lease_expires_at = now() + make_interval(secs => $3 / 1000.0)
+          where id = $1 and state = any($5)
+            and (lease_expires_at is null or lease_expires_at < now())
+          returning lease_token`,
+        [runId, owner, leaseMs, RunState.Running, CLAIMABLE],
       );
-      return rows[0] ? { runId: rows[0].id, token: Number(rows[0].lease_token) } : null;
+      return rows[0] ? { runId, token: Number(rows[0].lease_token) } : null;
+    },
+
+    // The oldest runs that need a worker: never started, or their lease has lapsed. A run
+    // waits while an earlier run on its conversation has failed and no person has resolved it.
+    async runsNeedingWork(limit: number): Promise<string[]> {
+      const { rows } = await db.query(
+        `select id from runs candidate
+          where state = any($1) and (lease_expires_at is null or lease_expires_at < now())
+            and not exists (select 1 from runs earlier
+                             where earlier.conversation_id = candidate.conversation_id
+                               and earlier.created_at < candidate.created_at
+                               and earlier.state = $2)
+          order by created_at
+          limit $3`,
+        [CLAIMABLE, RunState.Failed, limit],
+      );
+      return rows.map((row) => row.id);
+    },
+
+    // Claims the oldest run that needs a worker. Another worker may claim a run first; then
+    // this one moves on to the next.
+    async claimNext(owner: string, leaseMs: number): Promise<Lease | null> {
+      for (const runId of await this.runsNeedingWork(CANDIDATES_PER_CLAIM)) {
+        const lease = await this.claim(runId, owner, leaseMs);
+        if (lease) return lease;
+      }
+      return null;
+    },
+
+    // An earlier run on this run's conversation failed and is waiting for a person. It may have
+    // done things (a refund) that its saved transcript doesn't show, so this run waits too.
+    async isHeld(runId: string): Promise<boolean> {
+      const { rows } = await db.query(
+        `select 1 from runs earlier join runs run on run.id = $1
+          where earlier.conversation_id = run.conversation_id
+            and earlier.created_at < run.created_at
+            and earlier.state = $2`,
+        [runId, RunState.Failed],
+      );
+      return rows.length > 0;
     },
 
     renew(lease: Lease, leaseMs: number) {
